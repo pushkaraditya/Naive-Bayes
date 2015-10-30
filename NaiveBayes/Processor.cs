@@ -15,9 +15,15 @@ namespace NaiveBayes
     /// <typeparam name="TClass">Type of class property (at this moment, I not sure if this needs to be defined)</typeparam>
     public class Processor<T, TClass> where T : new()
     {
+        /*
+         * Bugs: Class Var property holds the value Yes and YES, it might give different results
+         */
+
+        private const string Avg = "Avg";
+        private const string Std = "Std";
         private bool isPrepared = false;
-        private PropertyInfo classVar = null;
-        private IEnumerable<PropertyInfo> facts = null;
+        private string classVar = null;
+        private IEnumerable<string> facts = null;
         public void Prepare()
         {
             T t = new T();
@@ -30,22 +36,23 @@ namespace NaiveBayes
                 throw new Exception(string.Format("No Class property found. To fix it, please apply {0} to a property", typeof(ClassAttribute).FullName));
             else if (classCount > 1)
                 throw new Exception(string.Format("More than one Class property found. To fix it, please remove {0} from a property", typeof(ClassAttribute).FullName));
-                
-            classVar = classProps.First();
-            if (Attribute.IsDefined(classVar, typeof(FactAttribute)))
+
+            var classProp = classProps.First();
+            if (Attribute.IsDefined(classProp, typeof(FactAttribute)))
                 throw new Exception("Class property cannot be a Fact");
-            else if(!classVar.PropertyType.IsPrimitive)
+            else if (!classProp.PropertyType.IsPrimitive)
                 throw new Exception("Class property should be primitive");
 
-            facts = props.Where(prop => Attribute.IsDefined(prop, typeof(FactAttribute)));
-            if (facts.Count() == 0)
+            var factProps = props.Where(prop => Attribute.IsDefined(prop, typeof(FactAttribute)));
+            if (factProps.Count() == 0)
                 throw new Exception(string.Format("No Fact property found. To fix it, please apply {0} to a property", typeof(FactAttribute).FullName));
 
-            var nonNumericFacts = string.Join(",", facts.Where(prop => !prop.PropertyType.IsNumeric()).Select(prop => prop.Name));
+            var nonNumericFacts = string.Join(",", factProps.Where(prop => !prop.PropertyType.IsNumeric()).Select(prop => prop.Name));
             if (!string.IsNullOrWhiteSpace(nonNumericFacts))
                 throw new Exception(string.Format("All the facts should be numeric. Facts which are not numeric: {0}", nonNumericFacts));
-            // segreagate class variable and facts
 
+            classVar = classProp.Name;
+            facts = factProps.Select(f => f.Name);
             isPrepared = true;
         }
 
@@ -59,14 +66,24 @@ namespace NaiveBayes
             if (!isPrepared)
                 throw new Exception("Processor is not prepared, please call Prepare method before process anything");
 
-            IList<T> modelData, testData;
-            data.SplitRandomly(out modelData, out testData);
+            if (data == null || data.Count == 0)
+                throw new ArgumentNullException("no data to process");
+
+            // convert data dictionary of data
+            var convertedData = data.Select(d => d.ToDictionary()).ToList();
+
+            IList<IDictionary<string, object>> modelData, testData;
+            convertedData.SplitRandomly(out modelData, out testData, splitRatio);
 
             // Get distinct values of Class (we will collect these values from model data itself)
+            var distincts = convertedData.Select(o => o[classVar] == null ? null : o[classVar].ToString()).Distinct();
             // if for any unique value, there are no records, this will lead to imperfect model
+            foreach (var distinct in distincts)
+                if (modelData.Count(o => o[classVar].ToString() == distinct) == 0)
+                    throw new Exception("Created model is imperfact, please try again. This may be becase of sparsely distributed data");
 
             // prepare model
-
+            var model = PrepareModel(modelData, distincts);
             // calculate the probability of every attribute of every element of test data for all unique values of Class
 
             // Compare the values and predict the result
@@ -74,10 +91,27 @@ namespace NaiveBayes
             // publish result and analytics
         }
 
-        public void PrepareModel(IEnumerable<T> modelData)
+        public Dictionary<string, Dictionary<string, Dictionary<string, double>>>
+            PrepareModel(IEnumerable<IDictionary<string, object>> modelData, IEnumerable<string> distinctClassValues)
         {
+            var model = new Dictionary<string, Dictionary<string, Dictionary<string, double>>>();
             // for every distinct value of Class, get the mean and avarage for every distinct value of class
+            foreach (var distinct in distinctClassValues)
+            {
+                model.Add(distinct, new Dictionary<string, Dictionary<string, double>>());
+                foreach (var fact in facts)
+                {
+                    var factData = modelData.Where(o => o[classVar].ToString() == distinct).Select(o => Convert.ToDouble(o[fact]));
+                    var mean = factData.Average();
+                    var std = factData.StdDev(o => o, mean);
 
+                    model[distinct].Add(fact, new Dictionary<string, double>());
+                    model[distinct][fact] = new Dictionary<string, double>();
+                    model[distinct][fact].Add(Avg, mean);
+                    model[distinct][fact].Add(Std, std);
+                }
+            }
+            return model;
         }
 
         /// <summary>

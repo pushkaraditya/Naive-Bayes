@@ -6,14 +6,14 @@ namespace NaiveBayes
 {
     public static class ListExtension
     {
-        public static double StdDev<T>(this IList<T> list, Func<T, double> selector, double? mean = null)
+        public static double StdDev<T>(this IEnumerable<T> list, Func<T, double> selector, double? mean = null)
         {
             double avg = 0;
             if (mean.HasValue)
                 avg = mean.Value;
             else
                 avg = list.Average(selector);
-            var variance = list.Sum(x => Math.Pow(selector(x) - avg, 2)) / (list.Count - 1);
+            var variance = list.Sum(x => Math.Pow(selector(x) - avg, 2)) / (list.Count() - 1);
             return Math.Sqrt(variance);
         }
 
