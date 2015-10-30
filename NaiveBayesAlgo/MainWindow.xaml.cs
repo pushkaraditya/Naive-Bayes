@@ -32,7 +32,8 @@ namespace NaiveBayesAlgo
                 var processor = new NaiveBayes.Processor<Person, int>();
                 processor.Prepare();
                 var data = new Processor().HandleData(@"pima-indians-diabetes.data.txt");
-                processor.Process(data);
+                var correctness = processor.Process(data);
+                lbl.Content = string.Format("Prepared model is {0:P} correct", correctness);
 
                 //var processor = new Processor();
                 //processor.Process(data);

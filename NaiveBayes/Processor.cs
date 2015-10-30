@@ -61,7 +61,7 @@ namespace NaiveBayes
         /// </summary>
         /// <param name="data"></param>
         /// <param name="splitRatio">this will split the data to create the mode and to test data to validate the model created by first segment</param>
-        public void Process(IList<T> data, double splitRatio = .67)
+        public double Process(IList<T> data, double splitRatio = .67)
         {
             if (!isPrepared)
                 throw new Exception("Processor is not prepared, please call Prepare method before process anything");
@@ -85,12 +85,39 @@ namespace NaiveBayes
             // prepare model
             var model = PrepareModel(modelData, distincts);
             // calculate the probability of every attribute of every element of test data for all unique values of Class
-
             // Compare the values and predict the result
+            var correct = 0;
+            foreach (var item in testData)
+            {
+                var output = new Dictionary<string, double>();
+                foreach (var distinct in distincts)
+                {
+                    double pItem = 1;
+                    foreach (var fact in facts)
+                    {
+                        var val = Convert.ToDouble(item[fact]);
+                        var p = CalculateProbability(val, model[distinct][fact][Avg], model[distinct][fact][Std]);
+                        pItem *= p;
+                    }
+                    output.Add(distinct, pItem);
+                }
+
+                var prediction = output.Aggregate((l, r) => l.Value > r.Value ? l : r).Key;
+                if (item[classVar].ToString() == prediction)
+                    correct += 1;
+            }
 
             // publish result and analytics
+            var correctness = (correct * 1.0) / testData.Count;
+            return correctness;
         }
 
+        /// <summary>
+        /// This creates the model or 3D array for distinct values of ClassVar, Fact and Avg/Std value
+        /// </summary>
+        /// <param name="modelData"></param>
+        /// <param name="distinctClassValues"></param>
+        /// <returns></returns>
         public Dictionary<string, Dictionary<string, Dictionary<string, double>>>
             PrepareModel(IEnumerable<IDictionary<string, object>> modelData, IEnumerable<string> distinctClassValues)
         {
